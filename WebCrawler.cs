@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Net.Http;
+﻿using HtmlAgilityPack;
 using System.Text.RegularExpressions;
-using HtmlAgilityPack;
 
 namespace WebCrawlerQnA
 {
@@ -33,10 +30,10 @@ namespace WebCrawlerQnA
 
                 var hyperlinks = new List<string>();
 
-                foreach (var linkNode in doc.DocumentNode.SelectNodes("//a[@href]"))
+                foreach (var linkNode in (doc.DocumentNode.SelectNodes("//a[@href]"))??Enumerable.Empty<HtmlNode>())
                 {
                     var href = linkNode.GetAttributeValue("href", string.Empty);
-                    if (HttpUrlPattern.IsMatch(href))
+                    if (!string.IsNullOrEmpty(href))
                     {
                         hyperlinks.Add(href);
                     }
@@ -125,7 +122,9 @@ namespace WebCrawlerQnA
                 Console.WriteLine(url); // for debugging and to see the progress
 
                 // Save text from the url to a <url>.txt file
-                var fileName = $"{textDirectoryPath}/{url.Substring(8).Replace("/", "_")}.txt";
+                string invalidChars = new string(Path.GetInvalidFileNameChars());
+                var validFileName = new string(url.Substring(8).Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+                var fileName = $"{textDirectoryPath}/{validFileName}.txt";
                 using (var writer = new StreamWriter(fileName, false, System.Text.Encoding.UTF8))
                 {
                     // Get the text from the URL using HtmlAgilityPack
