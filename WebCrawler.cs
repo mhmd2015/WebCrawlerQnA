@@ -9,7 +9,7 @@ namespace WebCrawlerQnA
         private static readonly Regex HttpUrlPattern = new(@"^http[s]*://.+", RegexOptions.Compiled);
 
         // Function to get the hyperlinks from a URL
-        public async Task<List<string>> GetHyperlinksAsync(string url)
+        public static async Task<List<string>> GetHyperlinksAsync(string url)
         {
             try
             {
@@ -49,7 +49,7 @@ namespace WebCrawlerQnA
         }
 
         // Function to get the hyperlinks from a URL that are within the same domain
-        public async Task<List<string>> GetDomainHyperlinks(string localDomain, string url)
+        public static async Task<List<string>> GetDomainHyperlinksAsync(string localDomain, string url)
         {
             var cleanLinks = new HashSet<string>();
             var rawLinks = await GetHyperlinksAsync(url);
@@ -95,7 +95,7 @@ namespace WebCrawlerQnA
             return cleanLinks.ToList();
         }
 
-        public async Task CrawlAsync(string url)
+        public static async Task CrawlAsync(string url)
         {
             // Parse the URL and get the domain
             var localDomain = new Uri(url).Host;
@@ -145,7 +145,7 @@ namespace WebCrawlerQnA
                 }
 
                 // Get the hyperlinks from the URL and add them to the queue
-                var hyperlinks = await GetDomainHyperlinks(localDomain, url);
+                var hyperlinks = await GetDomainHyperlinksAsync(localDomain, url);
                 foreach (var link in hyperlinks)
                 {
                     if (!seen.Contains(link))

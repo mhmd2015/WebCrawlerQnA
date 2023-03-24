@@ -8,9 +8,10 @@
             // Define root domain to crawl
             string domain = "openai.com";
             string fullUrl = "https://openai.com/";
+            
+            //await WebCrawler.CrawlAsync(fullUrl);
+            TextProcessor.ProcessTextFiles(domain);
 
-            var crawler = new WebCrawler();
-            await crawler.CrawlAsync(fullUrl);
             
             string filePath = "processed/scraped.csv";
 
