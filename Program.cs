@@ -10,13 +10,11 @@
             string fullUrl = "https://openai.com/";
             
             //await WebCrawler.CrawlAsync(fullUrl);
-            TextProcessor.ProcessTextFiles(domain);
-
+            TextProcessor.ProcessTextFiles(domain);         
             
-            string filePath = "processed/scraped.csv";
 
             // Load and process DataFrame
-            //var dataFrame = TextTokenizer.LoadAndProcessDataFrame(filePath);
+            TextTokenizer.TokenizeTextFile(domain);
 
             // Split text into chunks
             //var shortenedTexts = TextTokenizer.SplitTextIntoChunks(dataFrame);

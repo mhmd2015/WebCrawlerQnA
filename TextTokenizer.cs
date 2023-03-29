@@ -6,49 +6,78 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using XPlot.Plotly;
+using Microsoft.ML.Transforms.Text;
 
 namespace WebCrawlerQnA
 {
     public class TextTokenizer
     {
+
+        // Initialize tokenizer
+        static MLContext mlContext = new MLContext();        
+
+        public class TextData
+        {
+            public string? text { get; set; }
+        }
+        public class TokenizedTextData
+        {
+            [VectorType]
+            public string[] tokens { get; set; }
+        }
+
         //Step 6
-        public static DataFrame LoadAndProcessDataFrame(string filePath)
+        public static DataFrame CreateDataFrameWithNTokens(string filePath)
         {
             // Load the CSV file
             var df = DataFrame.LoadCsv(filePath);
 
             // Rename columns
-            df.Columns[0].SetName("title");
-            df.Columns[1].SetName("text");
+            df.Columns[0].SetName("index");
+            df.Columns[1].SetName("title");
+            df.Columns[2].SetName("text");
 
-            // Initialize tokenizer
-            var mlContext = new MLContext();
-            var tokenizerPipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
-            var tokenizerTransformer = tokenizerPipeline.Fit(df);
+            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
+            var tokenizerTransformer = pipeline.Fit(df);
 
             // Tokenize the text and save the number of tokens to a new column
-            var tokenizedDataFrame = tokenizerTransformer.Transform(df).ToDataFrame();
+            var transformedData = tokenizerTransformer.Transform(df);
 
+            // Convert the transformed data back to a list of TokenizedTextData objects
+            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
+            
             // Count the number of tokens per row
-            var tokenCounts = Enumerable.Cast<VBuffer<ReadOnlyMemory<char>>>(tokenizedDataFrame["tokens"]).Select(tokens => ((VBuffer<ReadOnlyMemory<char>>)tokens).Length).ToArray();
+            var tokenCounts =tokenizedData.Select(t => t.tokens?.Length).ToArray();
 
             // Add the token counts to the DataFrame
             var tokenCountsColumn = new PrimitiveDataFrameColumn<int>("n_tokens", tokenCounts);
-            tokenizedDataFrame.Columns.Add(tokenCountsColumn);
-
-            //tokenizedDataFrame.Columns.Add(new Int32DataFrameColumn("n_tokens", tokenizedDataFrame.Rows.Count, i => ((VBuffer<ReadOnlyMemory<char>>)tokenizedDataFrame.Rows[i]["tokens"]).Length));
-
-            return tokenizedDataFrame;
+            df.Columns.Add(tokenCountsColumn);
+            
+            return df;
         }
 
         // Function to split the text into chunks of a maximum number of tokens
-        public static List<string> SplitIntoMany(string text, int maxTokens, ITransformer tokenizerTransformer)
+        private static List<string> SplitIntoMany(string text, int maxTokens)
         {
             // Split the text into sentences
-            var sentences = text.Split(". ");
+            var sentences = text.Split(". ").Where(s=>!string.IsNullOrEmpty(s)).ToArray();
 
-            // Get the number of tokens for each sentence
-            var tokenCounts = sentences.Select(sentence => tokenizerTransformer.Transform(new DataFrame(new StringDataFrameColumn("text", new[] { " " + sentence }))).ToDataFrame().Columns["tokens"][0]).Select(tokens => ((VBuffer<ReadOnlyMemory<char>>)tokens).Length).ToArray();
+            var data = mlContext.Data.LoadFromEnumerable(sentences.Select(s=>new TextData() { text = s }));
+
+            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
+
+            // Fit the pipeline to the data
+            var model = pipeline.Fit(data);
+
+            // Transform the data using the pipeline
+            var transformedData = model.Transform(data);
+
+            // Convert the transformed data back to a list of TokenizedTextData objects
+            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
+
+            // Count the number of tokens per row
+            var tokenCounts = tokenizedData.Select(t => t.tokens.Length).ToArray();            
 
             var chunks = new List<string>();
             int tokensSoFar = 0;
@@ -91,10 +120,9 @@ namespace WebCrawlerQnA
             return chunks;
         }
 
-        public static List<string> SplitTextIntoChunks(DataFrame dataFrame, ITransformer tokenizerTransformer)
+        private static List<string> SplitTextIntoChunks(DataFrame dataFrame)
         {
-            int maxTokens = 500;           
-            
+            int maxTokens = 500;                       
 
             var shortened = new List<string>();
 
@@ -102,7 +130,7 @@ namespace WebCrawlerQnA
             for (long rowIndex = 0; rowIndex < dataFrame.Rows.Count; rowIndex++)
             {
                 var row = dataFrame.Rows[rowIndex];
-                var text = row[1].ToString();
+                var text = row[2].ToString();
 
                 // If the text is null, go to the next row
                 if (string.IsNullOrEmpty(text))
@@ -111,10 +139,10 @@ namespace WebCrawlerQnA
                 }
 
                 // If the number of tokens is greater than the max number of tokens, split the text into chunks
-                int nTokens = (int)row[2];
+                int nTokens = (int)row[3];
                 if (nTokens > maxTokens)
                 {
-                    shortened.AddRange(SplitIntoMany(text, maxTokens, tokenizerTransformer));
+                    shortened.AddRange(SplitIntoMany(text, maxTokens));
                 }
                 // Otherwise, add the text to the list of shortened texts
                 else
@@ -126,17 +154,41 @@ namespace WebCrawlerQnA
             return shortened;
         }
 
-        public static DataFrame CreateShortenedDataFrame(List<string> shortenedTexts, ITransformer tokenizerTransformer)
+        private static DataFrame CreateShortenedDataFrame(List<string> shortenedTexts)
         {
             // Create a DataFrame with the shortened texts
             var df = new DataFrame(new StringDataFrameColumn("text", shortenedTexts));
 
+            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
+            var tokenizerTransformer = pipeline.Fit(df);
+
             // Tokenize the text and save the number of tokens to a new column
-            var tokenizedDataFrame = tokenizerTransformer.Transform(df).ToDataFrame();           
-            tokenizedDataFrame.Columns.Add(new Int32DataFrameColumn("n_tokens", tokenizedDataFrame["tokens"].Cast<object>().ToList().Select(x => ((VBuffer<ReadOnlyMemory<char>>)x).Length)));
+            var transformedData = tokenizerTransformer.Transform(df);
 
+            // Convert the transformed data back to a list of TokenizedTextData objects
+            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
 
-            return tokenizedDataFrame;
+            // Count the number of tokens per row
+            var tokenCounts = tokenizedData.Select(t => t.tokens?.Length).ToArray();
+
+            // Add the token counts to the DataFrame
+            var tokenCountsColumn = new PrimitiveDataFrameColumn<int>("n_tokens", tokenCounts);
+            df.Columns.Add(tokenCountsColumn);          
+
+            return df;
+        }
+
+        public static DataFrame TokenizeTextFile(string domain)
+        {
+            var filePath = $"processed/{domain}/scraped.csv";
+
+            var df = CreateDataFrameWithNTokens(filePath);
+
+            var chunks = SplitTextIntoChunks(df);
+
+            var sdf = CreateShortenedDataFrame(chunks);
+
+            return sdf;
         }
     }
 }

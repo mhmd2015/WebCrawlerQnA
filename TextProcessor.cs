@@ -8,7 +8,7 @@ namespace WebCrawlerQnA
     public class TextProcessor
     {
         // Step 5
-        public static string RemoveNewlines(string input)
+        private static string RemoveNewlines(string input)
         {
             string result = Regex.Replace(input, @"\n", " ");
             result = Regex.Replace(result, @"\\n", " ");
@@ -20,7 +20,8 @@ namespace WebCrawlerQnA
         // Step 6
         public static void ProcessTextFiles(string domain)
         {
-            string textDirectoryPath = $"text/{domain}";
+            string textDirectoryPath = $"text/{domain}";           
+
             int prefixLen = domain.Length + 1 ;
             List<Tuple<int, string, string>> texts = new List<Tuple<int, string, string>>();
 
@@ -47,8 +48,14 @@ namespace WebCrawlerQnA
             {
                 dataFrame.Append(row, true);
             }
+
+            // Create a directory to store the csv files            
+            string csvDirectoryPath = $"processed/{domain}";
+            Directory.CreateDirectory(csvDirectoryPath);
+
             
-            DataFrame.SaveCsv(dataFrame, "processed/scraped.csv");
+
+            DataFrame.SaveCsv(dataFrame, $"{csvDirectoryPath}/scraped.csv");
         }
     }    
 }

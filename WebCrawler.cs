@@ -109,10 +109,7 @@ namespace WebCrawlerQnA
 
             // Create a directory to store the text files
             var textDirectoryPath = $"text/{localDomain}";
-            Directory.CreateDirectory(textDirectoryPath);
-
-            // Create a directory to store the csv files
-            Directory.CreateDirectory("processed");
+            Directory.CreateDirectory(textDirectoryPath);            
 
             // While the queue is not empty, continue crawling
             while (queue.Count > 0)
