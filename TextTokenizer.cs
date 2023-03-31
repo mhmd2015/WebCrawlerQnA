@@ -192,4 +192,3 @@ namespace WebCrawlerQnA
         }
     }
 }
-//https://towardsdatascience.com/getting-started-with-c-dataframe-and-xplot-ploty-6ea6ce0ce8e3

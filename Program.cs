@@ -1,30 +1,76 @@
-﻿namespace WebCrawlerQnA
+﻿using Microsoft.Data.Analysis;
+using Microsoft.Extensions.Configuration;
+using OpenAI.GPT3;
+using OpenAI.GPT3.Managers;
+using OpenAI.GPT3.ObjectModels.ResponseModels;
+using System.CommandLine;
+using System.CommandLine.Builder;
+using System.CommandLine.NamingConventionBinder;
+using System.CommandLine.Parsing;
+using XPlot.Plotly;
+
+namespace WebCrawlerQnA
 {
     internal class Program
     {
         static async Task Main(string[] args)
         {
-            Directory.SetCurrentDirectory(@"d:\data");
-            // Define root domain to crawl
-            string domain = "openai.com";
-            string fullUrl = "https://openai.com/";
-            
-            //await WebCrawler.CrawlAsync(fullUrl);
-            TextProcessor.ProcessTextFiles(domain);         
-            
+            var config = new ConfigurationBuilder()
+               .SetBasePath(Directory.GetCurrentDirectory())
+               .AddJsonFile(AppDomain.CurrentDomain.BaseDirectory + "\\appsettings.json", optional: true, reloadOnChange: true)
+               .Build();
 
-            // Load and process DataFrame
-            TextTokenizer.TokenizeTextFile(domain);
+            var apiKey = config.GetSection("apiKey").Get<string>();
 
-            // Split text into chunks
-            //var shortenedTexts = TextTokenizer.SplitTextIntoChunks(dataFrame);
+            var openAiService = new OpenAIService(new OpenAiOptions()
+            {
+                ApiKey = apiKey
+            });            
 
-            // Create DataFrame with shortened texts
-            //var shortenedDataFrame = TextTokenizer.CreateShortenedDataFrame(shortenedTexts);
 
-            // Visualize the distribution of the number of tokens per row using a histogram
-            // In C#, you may need to use a library like MathNet.Numerics or OxyPlot to create histograms
+            var buildCommand = new Command("build", "build the QnA")
+            {
+                new Argument<string>("domain", "root domain to crawl"),
+                new Option<string>(new string[]{"-p","--path" }, ()=>@"d:\data\", "data path")
+            };
 
+
+            var askCommand = new Command("ask", "ask questions")
+            {
+                new Argument<string>("domain", "root domain to ask"),
+                new Option<string>(new []{"-q","--question" },"question"),
+                new Option<string>(new string[]{"-p","--path" }, ()=>@"d:\data\", "data path")
+            };
+
+
+            buildCommand.Handler = CommandHandler.Create<string, string>(async (string domain, string path) =>
+            {
+                Directory.SetCurrentDirectory(path);
+                await WebCrawler.CrawlAsync(domain);
+                TextProcessor.ProcessTextFiles(domain);
+                var df = TextTokenizer.TokenizeTextFile(domain);
+                await TextEmbedding.CreateEmbeddings(openAiService, df, domain);
+            });
+
+            askCommand.Handler = CommandHandler.Create<string,string,string>(async (string domain, string path, string question) =>
+            {
+                Directory.SetCurrentDirectory(path);
+                await TextEmbedding.AnswerQuestion(openAiService, domain, question);
+            });
+
+            var rootCommand = new RootCommand("A simple Q&A CLI application.")
+            {
+                buildCommand,
+                askCommand
+            };
+
+            var builder = new CommandLineBuilder(rootCommand);
+            builder.UseDefaults();
+            builder.UseHelp();
+            builder.UseVersionOption();
+            var parser = builder.Build();
+
+            await parser.InvokeAsync(args);
         }
     }
 }

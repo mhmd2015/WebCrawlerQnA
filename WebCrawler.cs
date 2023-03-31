@@ -95,8 +95,10 @@ namespace WebCrawlerQnA
             return cleanLinks.ToList();
         }
 
-        public static async Task CrawlAsync(string url)
+        public static async Task CrawlAsync(string domain)
         {
+
+            var url = $"https://{domain}";
             // Parse the URL and get the domain
             var localDomain = new Uri(url).Host;
 
