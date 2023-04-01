@@ -1,4 +1,5 @@
 ﻿using HtmlAgilityPack;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace WebCrawlerQnA
@@ -49,10 +50,11 @@ namespace WebCrawlerQnA
         }
 
         // Function to get the hyperlinks from a URL that are within the same domain
-        public static async Task<List<string>> GetDomainHyperlinksAsync(string localDomain, string url)
+        public static async Task<List<string>> GetDomainHyperlinksAsync(string domain, string url)
         {
             var cleanLinks = new HashSet<string>();
             var rawLinks = await GetHyperlinksAsync(url);
+            var uri = new Uri(url);
 
             foreach (var link in rawLinks.Distinct())
             {
@@ -62,8 +64,8 @@ namespace WebCrawlerQnA
                 if (HttpUrlPattern.IsMatch(link))
                 {
                     // Parse the URL and check if the domain is the same
-                    var urlObj = new Uri(link);
-                    if (urlObj.Host == localDomain)
+                    var linkUri = new Uri(link);
+                    if (linkUri.Host == domain)
                     {
                         cleanLink = link;
                     }
@@ -72,13 +74,19 @@ namespace WebCrawlerQnA
                 else
                 {
                     if (link.StartsWith("/"))
-                    {                        
-                        cleanLink = $"https://{localDomain}/{link.Substring(1)}";
+                    {
+                        cleanLink = $"{uri.Scheme}://{domain}/{link.Substring(1)}";
                     }
                     else if (link.StartsWith("#") || link.StartsWith("mailto:"))
                     {
                         continue;
-                    }                    
+                    }
+                    else
+                    {
+                        Uri absoluteUri = new Uri(uri, link);
+                        cleanLink = absoluteUri.ToString();
+                    }
+                    
                 }
 
                 if (cleanLink != null)
@@ -95,12 +103,11 @@ namespace WebCrawlerQnA
             return cleanLinks.ToList();
         }
 
-        public static async Task CrawlAsync(string domain)
+        public static async Task CrawlAsync(string url)
         {
-
-            var url = $"https://{domain}";
             // Parse the URL and get the domain
-            var localDomain = new Uri(url).Host;
+            var uri = new Uri(url);
+            var domain = uri.Host;
 
             // Create a queue to store the URLs to crawl
             var queue = new Queue<string>();
@@ -110,7 +117,7 @@ namespace WebCrawlerQnA
             var seen = new HashSet<string> { url };
 
             // Create a directory to store the text files
-            var textDirectoryPath = $"text/{localDomain}";
+            var textDirectoryPath = $"text/{domain}";
             Directory.CreateDirectory(textDirectoryPath);            
 
             // While the queue is not empty, continue crawling
@@ -122,37 +129,44 @@ namespace WebCrawlerQnA
 
                 // Save text from the url to a <url>.txt file
                 string invalidChars = new string(Path.GetInvalidFileNameChars());
-                var validFileName = new string(url.Substring(8).Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+                var validFileName = new string(url.Substring(uri.Scheme.Length + 3).Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
                 var fileName = $"{textDirectoryPath}/{validFileName}.txt";
-                using (var writer = new StreamWriter(fileName, false, System.Text.Encoding.UTF8))
+                
+                // Get the text from the URL using HtmlAgilityPack
+                var web = new HtmlWeb();
+                HttpStatusCode statusCode = HttpStatusCode.NoContent;
+                string contentType = null;
+                web.PostResponse = (req, res) => { statusCode = res.StatusCode; contentType = res.ContentType; };
+                var doc = web.Load(url);
+
+                if (statusCode == HttpStatusCode.OK && contentType!= null && contentType.Contains("text/html"))
                 {
-                    // Get the text from the URL using HtmlAgilityPack
-                    var web = new HtmlWeb();
-                    var doc = await web.LoadFromWebAsync(url);
-
-                    // Get the text but remove the tags
-                    var text = doc.DocumentNode.InnerText;
-
-                    // If the crawler gets to a page that requires JavaScript, it will stop the crawl
-                    if (text.Contains("You need to enable JavaScript to run this app."))
+                    using (var writer = new StreamWriter(fileName, false, System.Text.Encoding.UTF8))
                     {
-                        Console.WriteLine($"Unable to parse page {url} due to JavaScript being required");
+                        // Get the text but remove the tags
+                        var text = doc.DocumentNode.InnerText;
+
+                        // If the crawler gets to a page that requires JavaScript, it will stop the crawl
+                        if (text.Contains("You need to enable JavaScript to run this app."))
+                        {
+                            Console.WriteLine($"Unable to parse page {url} due to JavaScript being required");
+                        }
+
+                        // Otherwise, write the text to the file in the text directory
+                        await writer.WriteAsync(text);
                     }
 
-                    // Otherwise, write the text to the file in the text directory
-                    await writer.WriteAsync(text);
-                }
-
-                // Get the hyperlinks from the URL and add them to the queue
-                var hyperlinks = await GetDomainHyperlinksAsync(localDomain, url);
-                foreach (var link in hyperlinks)
-                {
-                    if (!seen.Contains(link))
+                    // Get the hyperlinks from the URL and add them to the queue
+                    var hyperlinks = await GetDomainHyperlinksAsync(domain, url);
+                    foreach (var link in hyperlinks)
                     {
-                        queue.Enqueue(link);
-                        seen.Add(link);
+                        if (!seen.Contains(link))
+                        {
+                            queue.Enqueue(link);
+                            seen.Add(link);
+                        }
                     }
-                }
+                }                
             }
         }
     }

@@ -20,7 +20,7 @@ namespace WebCrawlerQnA
                .AddJsonFile(AppDomain.CurrentDomain.BaseDirectory + "\\appsettings.json", optional: true, reloadOnChange: true)
                .Build();
 
-            var apiKey = config.GetSection("apiKey").Get<string>();
+            var apiKey = config.GetSection("ApiKey").Get<string>();
 
             var openAiService = new OpenAIService(new OpenAiOptions()
             {
@@ -30,8 +30,8 @@ namespace WebCrawlerQnA
 
             var buildCommand = new Command("build", "build the QnA")
             {
-                new Argument<string>("domain", "root domain to crawl"),
-                new Option<string>(new string[]{"-p","--path" }, ()=>@"d:\data\", "data path")
+                new Argument<string>("url", "root url to crawl"),
+                new Option<string>(new []{"-p","--path" }, ()=>@"d:\data\", "data path")
             };
 
 
@@ -43,10 +43,11 @@ namespace WebCrawlerQnA
             };
 
 
-            buildCommand.Handler = CommandHandler.Create<string, string>(async (string domain, string path) =>
+            buildCommand.Handler = CommandHandler.Create<string, string>(async (string url, string path) =>
             {
+                var domain = new Uri(url).Host;
                 Directory.SetCurrentDirectory(path);
-                await WebCrawler.CrawlAsync(domain);
+                await WebCrawler.CrawlAsync(url);
                 TextProcessor.ProcessTextFiles(domain);
                 var df = TextTokenizer.TokenizeTextFile(domain);
                 await TextEmbedding.CreateEmbeddings(openAiService, df, domain);
