@@ -1,16 +1,6 @@
-﻿using Microsoft.Data.Analysis;
-using Newtonsoft.Json.Linq;
+﻿using MathNet.Numerics.LinearAlgebra;
+using Microsoft.Data.Analysis;
 using OpenAI.GPT3.Interfaces;
-using OpenAI.GPT3.Managers;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using MathNet.Numerics.LinearAlgebra;
-using System.Collections;
-using static System.Net.Mime.MediaTypeNames;
-using OpenAI.GPT3.ObjectModels.ResponseModels;
 using OpenAI.GPT3.ObjectModels.RequestModels;
 
 namespace WebCrawlerQnA
@@ -46,19 +36,33 @@ namespace WebCrawlerQnA
         }
 
 
-        public static async Task CreateEmbeddings(IOpenAIService openAiService, DataFrame df, string domain)
+        public static async Task CreateEmbeddings(IOpenAIService openAiService, DataFrame df, string domain, int rateLimit)
         {
             var Embeddings = new List<List<double>>();
+            int delayBetweenRequests = 60_000 / rateLimit; // Convert rateLimit to milliseconds
+
             for (long rowIndex = 0; rowIndex < df.Rows.Count; rowIndex++)
             {
                 var row = df.Rows[rowIndex];
-                var text = row[2].ToString();
+                var text = row[df.Columns.IndexOf("text")].ToString();
                 var response = await openAiService.Embeddings.CreateEmbedding(new OpenAI.GPT3.ObjectModels.RequestModels.EmbeddingCreateRequest()
                 {
                     Input = text,
                     Model = "text-embedding-ada-002"
                 });
-                Embeddings.Add(response.Data[0].Embedding);
+                if ((response?.Data != null) && (response.Successful))
+                {
+                    Embeddings.Add(response.Data[0].Embedding);
+                    if (rowIndex < df.Rows.Count - 1) // Don't wait after the last request
+                    {
+                        await Task.Delay(delayBetweenRequests);
+                    }
+                }
+                else
+                {
+                    Console.WriteLine(response?.Error?.Message);
+                    return;
+                }
             }
 
             // Add the token counts to the DataFrame
@@ -69,7 +73,7 @@ namespace WebCrawlerQnA
 
         public static DataFrame GetEmbeddings(string domain)
         {
-            string csvFilePath = "processed/embeddings.csv";
+            string csvFilePath = $"processed/{domain}/embeddings.csv";
             DataFrame df = DataFrame.LoadCsv(csvFilePath);
             
             return df;
@@ -77,21 +81,27 @@ namespace WebCrawlerQnA
 
         public static async Task<string> CreateContext(IOpenAIService openAiService, string question, DataFrame df, int maxLen = 1800, string size = "ada")
         {
+            List<List<double>> embeddings = new List<List<double>>();
+
+            foreach (var row in df.Rows)
+            {
+                List<double> embedding = row[df.Columns.IndexOf("embeddings")].ToString().Trim('[', ']').Split(",").Select(s =>double.Parse(s)).ToList();
+                embeddings.Add(embedding);
+            }
+
             var response = await openAiService.Embeddings.CreateEmbedding(new OpenAI.GPT3.ObjectModels.RequestModels.EmbeddingCreateRequest()
             {
                 Input = question,
                 Model = "text-embedding-ada-002"
             });
 
-            var qEmbeddings = response.Data[0].Embedding;
-
-            List<List<double>> embeddings = new List<List<double>>();
-
-            foreach (var row in df.Rows)
-            {
-                List<double> embedding = row[3].ToString().Trim('[', ']').Split(", ").Select(double.Parse).ToList(); 
-                embeddings.Add(embedding);
+            if (!response.Successful) {
+                Console.WriteLine(response?.Error?.Message);
+                return string.Empty;
             }
+
+            var qEmbeddings = response.Data[0].Embedding;
+            
 
             double[] distances = DistancesFromEmbeddings(qEmbeddings, embeddings);
 

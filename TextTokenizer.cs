@@ -1,33 +1,10 @@
-﻿using Microsoft.Data.Analysis;
-using Microsoft.ML.Data;
-using Microsoft.ML;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using XPlot.Plotly;
-using Microsoft.ML.Transforms.Text;
+﻿using AI.Dev.OpenAI.GPT;
+using Microsoft.Data.Analysis;
 
 namespace WebCrawlerQnA
 {
     public class TextTokenizer
     {
-
-        // Initialize tokenizer
-        static MLContext mlContext = new MLContext();        
-
-        public class TextData
-        {
-            public string? text { get; set; }
-        }
-        public class TokenizedTextData
-        {
-            [VectorType]
-            public string[] tokens { get; set; }
-        }
-
-        //Step 6
         public static DataFrame CreateDataFrameWithNTokens(string filePath)
         {
             // Load the CSV file
@@ -36,23 +13,14 @@ namespace WebCrawlerQnA
             // Rename columns
             df.Columns[0].SetName("index");
             df.Columns[1].SetName("title");
-            df.Columns[2].SetName("text");
+            df.Columns[2].SetName("text");            
 
-            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
-            var tokenizerTransformer = pipeline.Fit(df);
-
-            // Tokenize the text and save the number of tokens to a new column
-            var transformedData = tokenizerTransformer.Transform(df);
-
-            // Convert the transformed data back to a list of TokenizedTextData objects
-            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
-            
-            // Count the number of tokens per row
-            var tokenCounts =tokenizedData.Select(t => t.tokens?.Length).ToArray();
+            var tokenCounts = df.Columns["text"].Cast<string>().Select(t => GPT3Tokenizer.Encode(t).Count).ToArray();
 
             // Add the token counts to the DataFrame
             var tokenCountsColumn = new PrimitiveDataFrameColumn<int>("n_tokens", tokenCounts);
-            df.Columns.Add(tokenCountsColumn);
+
+            df.Columns.Add(tokenCountsColumn);           
             
             return df;
         }
@@ -61,23 +29,12 @@ namespace WebCrawlerQnA
         private static List<string> SplitIntoMany(string text, int maxTokens)
         {
             // Split the text into sentences
-            var sentences = text.Split(". ").Where(s=>!string.IsNullOrEmpty(s)).ToArray();
+            var sentences = text.Split(". ").Where(s=>!string.IsNullOrEmpty(s)).ToArray();            
 
-            var data = mlContext.Data.LoadFromEnumerable(sentences.Select(s=>new TextData() { text = s }));
+            var tokenCounts = sentences.Select(t => GPT3Tokenizer.Encode(t).Count).ToArray();
 
-            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
-
-            // Fit the pipeline to the data
-            var model = pipeline.Fit(data);
-
-            // Transform the data using the pipeline
-            var transformedData = model.Transform(data);
-
-            // Convert the transformed data back to a list of TokenizedTextData objects
-            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
-
-            // Count the number of tokens per row
-            var tokenCounts = tokenizedData.Select(t => t.tokens.Length).ToArray();            
+            // Add the token counts to the DataFrame
+            var tokenCountsColumn = new PrimitiveDataFrameColumn<int>("n_tokens", tokenCounts);
 
             var chunks = new List<string>();
             int tokensSoFar = 0;
@@ -130,7 +87,7 @@ namespace WebCrawlerQnA
             for (long rowIndex = 0; rowIndex < dataFrame.Rows.Count; rowIndex++)
             {
                 var row = dataFrame.Rows[rowIndex];
-                var text = row[2].ToString();
+                var text = row[dataFrame.Columns.IndexOf("text")].ToString();
 
                 // If the text is null, go to the next row
                 if (string.IsNullOrEmpty(text))
@@ -139,7 +96,7 @@ namespace WebCrawlerQnA
                 }
 
                 // If the number of tokens is greater than the max number of tokens, split the text into chunks
-                int nTokens = (int)row[3];
+                int nTokens = (int)row[dataFrame.Columns.IndexOf("n_tokens")];
                 if (nTokens > maxTokens)
                 {
                     shortened.AddRange(SplitIntoMany(text, maxTokens));
@@ -157,19 +114,9 @@ namespace WebCrawlerQnA
         private static DataFrame CreateShortenedDataFrame(List<string> shortenedTexts)
         {
             // Create a DataFrame with the shortened texts
-            var df = new DataFrame(new StringDataFrameColumn("text", shortenedTexts));
+            var df = new DataFrame(new StringDataFrameColumn("text", shortenedTexts));            
 
-            var pipeline = mlContext.Transforms.Text.TokenizeIntoWords("tokens", "text", separators: new[] { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '(', ')', '[', ']', '{', '}', '\"', '\'', '<', '>', '/', '\\', '|', '@', '&', '*', '%', '+', '-', '=', '!', '?', '`', '~', '#' });
-            var tokenizerTransformer = pipeline.Fit(df);
-
-            // Tokenize the text and save the number of tokens to a new column
-            var transformedData = tokenizerTransformer.Transform(df);
-
-            // Convert the transformed data back to a list of TokenizedTextData objects
-            var tokenizedData = mlContext.Data.CreateEnumerable<TokenizedTextData>(transformedData, reuseRowObject: false);
-
-            // Count the number of tokens per row
-            var tokenCounts = tokenizedData.Select(t => t.tokens?.Length).ToArray();
+            var tokenCounts = df.Columns["text"].Cast<string>().Select(t => GPT3Tokenizer.Encode(t).Count).ToArray();
 
             // Add the token counts to the DataFrame
             var tokenCountsColumn = new PrimitiveDataFrameColumn<int>("n_tokens", tokenCounts);

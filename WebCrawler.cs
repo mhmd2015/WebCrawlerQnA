@@ -58,7 +58,7 @@ namespace WebCrawlerQnA
 
             foreach (var link in rawLinks.Distinct())
             {
-                string cleanLink = null;
+                string? cleanLink = null;
 
                 // If the link is a URL, check if it is within the same domain
                 if (HttpUrlPattern.IsMatch(link))
@@ -135,7 +135,7 @@ namespace WebCrawlerQnA
                 // Get the text from the URL using HtmlAgilityPack
                 var web = new HtmlWeb();
                 HttpStatusCode statusCode = HttpStatusCode.NoContent;
-                string contentType = null;
+                string? contentType = null;
                 web.PostResponse = (req, res) => { statusCode = res.StatusCode; contentType = res.ContentType; };
                 var doc = web.Load(url);
 
