@@ -1,5 +1,5 @@
 # WebCrawlerQnA
-A Q&amp;A System with OpenAI API in C#
+[Creating a Q&A System with OpenAI API in C#: Step-by-Step Tutorial and Implementation Guide](https://liuhongbo.medium.com/creating-a-q-a-system-with-openai-api-in-c-step-by-step-tutorial-and-implementation-guide-d40412723072)
 
 
 
